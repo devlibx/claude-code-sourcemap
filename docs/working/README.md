@@ -1,47 +1,37 @@
-# Internal Working Documentation: `/compact` Flow
+# Internal Working Documentation: Claude Code Flows
 
-This directory contains the detailed architectural research and flow analysis for the Claude Code command system.
-
-## 🚀 Overview: The `/compact` Command
-
-The `/compact` command is a high-level state transition that performs **Semantic Context Compression**. It allows a developer to continue a long session by summarizing past work and resetting the terminal state without losing the "thread" of the conversation.
+This directory contains detailed architectural research and flow analysis for the Claude Code agentic system.
 
 ---
 
-## 📊 Process Flow (Sequence Diagram)
+## 🚀 1. The `/compact` Command Flow
+**Concept:** Semantic Context Compression to manage long sessions.
 
-Below is the end-to-end execution flow from User Input to React State re-hydration.
+- **[Deep Dive](./compact-deep-dive.md):** Analysis of state transitions and re-hydration.
+- **[Flow Diagram](./compact-flow.puml):** End-to-end execution from input to React state reset.
 
-![Compact Command Flow](./CompactCommandFlow_Detailed.png)
-
-> **Source:** [compact-flow.puml](./compact-flow.puml) (PlantUML)
-
----
-
-## 🧠 Core Components & Concepts
-
-### 1. [Semantic Summarization](./compact-deep-dive.md#phase-a-context-gathering--summarization)
-The system leverages **Claude 3.5 Sonnet** to transform a heavy message history into a concise, actionable summary. This is not just a text summary; it is a strategic "handoff" for the agent's next turn.
-
-### 2. [State Destruction](./compact-deep-dive.md#phase-b-state-destruction-the-wipe)
-To free up context and improve performance, the system performs a multi-layer wipe:
-- **Terminal UI:** Clears scrollback using ANSI escape codes.
-- **Global Store:** Wipes the message history array in `src/messages.ts`.
-- **Logic Caches:** Invalidates memoized directory and git status maps.
-
-### 3. [React Re-hydration](./compact-deep-dive.md#phase-c-state-re-hydration-the-baton-pass)
-Using a "Baton Pass" pattern, the command logic queues the summary in `setForkConvoWithMessagesOnTheNextRender`. The main `REPL.tsx` component then "picks up" this summary and restores it as the new foundational history.
+![Compact Flow](./CompactCommandFlow_Detailed.png)
 
 ---
 
-## 📂 Files in this Directory
+## 🛠️ 2. The Code Editing Loop
+**Concept:** The recursive "Read-Think-Edit-Verify" cycle.
 
-| File | Description |
-| :--- | :--- |
-| [README.md](./README.md) | This index file. |
-| [compact-deep-dive.md](./compact-deep-dive.md) | Deep technical analysis of the compression algorithm. |
-| [compact-flow.puml](./compact-flow.puml) | PlantUML source for the sequence diagram. |
-| [CompactCommandFlow_Detailed.png](./CompactCommandFlow_Detailed.png) | Rendered sequence diagram (Handwritten style). |
+- **[Deep Dive](./code-editing-deep-dive.md):** Breakdown of `query.ts` and the `FileEditTool` safety logic.
+- **[Flow Diagram](./code-editing-flow.puml):** Multi-turn interaction between the LLM and local filesystem.
+
+![Code Editing Flow](./CodeEditingFlow_Detailed.png)
+
+---
+
+## 📂 Documentation Manifest
+
+| File | Category | Description |
+| :--- | :--- | :--- |
+| [compact-deep-dive.md](./compact-deep-dive.md) | Compact | Compression algorithm analysis. |
+| [compact-flow.puml](./compact-flow.puml) | Compact | PUML source for context clearing. |
+| [code-editing-deep-dive.md](./code-editing-deep-dive.md) | Editing | Analysis of recursive tool-use. |
+| [code-editing-flow.puml](./code-editing-flow.puml) | Editing | PUML source for the agentic loop. |
 
 ---
 *Created by Senior Architect Gemini CLI for deep-dive training purposes.*

@@ -1,0 +1,118 @@
+@startuml CodeEditingFlow_Expert
+' Expert-Level Sequence Diagram for Claude Code Editing Loop
+' Detailed mapping of React Hooks, Recursive Generators, and Persistent Shell State.
+
+skinparam handwritten true
+skinparam backgroundColor white
+skinparam BoxPadding 10
+skinparam ParticipantPadding 20
+skinparam maxMessageSize 200
+
+header Claude Code Internal Architecture: Expert Deep Dive
+footer Confidential - Senior Architect Series
+
+actor Developer as "Developer"
+
+box "UI & State" #F8F9FA
+    participant REPL as "REPL.tsx\n(React View)"
+    participant MSGS_S as "messages.ts\n(Global State)"
+end box
+
+box "The Core Orchestrator" #E8F5E9
+    participant QRY as "query.ts\n(Recursive Generator)"
+    participant NORM as "messages.tsx\n(API Normalizer)"
+end box
+
+box "The Action Tools" #E3F2FD
+    participant READ as "FileReadTool.tsx\n(Ingestion)"
+    participant EDIT as "FileEditTool.tsx\n(Mutation)"
+    participant BASH as "BashTool.tsx\n(Shell Environment)"
+end box
+
+box "Infrastructure" #FFF3E0
+    participant SHELL as "PersistentShell.ts\n(Stateful Process)"
+    participant ANTH as "Anthropic API\n(Claude 3.5 Sonnet)"
+    database DISK as "Local Filesystem"
+end box
+
+' --- START ---
+Developer -> REPL : "Fix bug in app.ts & run tests"
+activate REPL
+
+REPL -> QRY : query(initialMessages, systemPrompt, tools)
+activate QRY
+
+loop Recursive Multi-Turn Trajectory
+    
+    group 1. API Inference Turn
+        QRY -> NORM : normalizeMessagesForAPI(messages)
+        NORM --> QRY : raw_json_payload
+        
+        QRY -> ANTH : POST /v1/messages (JSON Payload)
+        note right of ANTH: Includes full project context\n(README, Git Status, Dir Structure)
+        ANTH --> QRY : AssistantMessage: [tool_use: Read, tool_use: Bash]
+    end
+
+    group 2. Tool Dispatch (Concurrency Logic)
+        note right of QRY: Checks tool.isReadOnly().\nReadTools run in parallel.\nWriteTools run serially.
+        
+        par Parallel Execution: Read Actions
+            QRY -> READ : call({path: 'app.ts'})
+            READ -> DISK : readFileSync()
+            READ -> MSGS_S : Update readFileTimestamps[path] = mtimeMs
+            READ --> QRY : tool_result: {content: "..."}
+        else
+            QRY -> BASH : call({command: 'ls'})
+            BASH -> SHELL : exec('ls')
+            SHELL -> DISK : File I/O via bash
+            SHELL --> BASH : stdout: "..."
+            BASH --> QRY : tool_result: {stdout: "..."}
+        end
+    end
+
+    group 3. The Mutation Turn (FileEditTool)
+        QRY -> ANTH : POST (Turn 1 results)
+        ANTH --> QRY : AssistantMessage: [tool_use: FileEditTool]
+        
+        QRY -> EDIT : validateInput(old, new)
+        activate EDIT
+        EDIT -> DISK : statSync(path).mtimeMs
+        note right of EDIT: **CRITICAL:** Check if current mtimeMs >\nstored readFileTimestamps[path].\nIf so, throw 'Stale Write' error.
+        EDIT -> DISK : readFileSync()
+        EDIT -> EDIT : countMatches(old_string)
+        note right of EDIT: Error if matches != 1
+        EDIT --> QRY : ValidationResult(Success)
+        deactivate EDIT
+        
+        QRY -> EDIT : call()
+        activate EDIT
+        EDIT -> EDIT : applyEdit() -> original.replace(old, new)
+        EDIT -> DISK : writeFileSync()
+        EDIT --> QRY : tool_result: {status: 'updated'}
+        deactivate EDIT
+    end
+
+    group 4. Verification & State Persistence
+        QRY -> ANTH : POST (Turn 2 results)
+        ANTH --> QRY : AssistantMessage: [tool_use: BashTool(npm test)]
+        
+        QRY -> BASH : call()
+        BASH -> SHELL : exec('npm test')
+        activate SHELL
+        note right of SHELL: Executes in persistent child process.\nPreserves ENV vars & directory state.
+        SHELL -> DISK : Executes test runner
+        DISK --> SHELL : exit_code, stdout, stderr
+        SHELL --> BASH : ExecResult
+        deactivate SHELL
+        BASH --> QRY : tool_result: {stdout: "...", exit: 0}
+    end
+
+    QRY -> QRY : Check for more tool_use
+    note right of QRY: If no tool_use in response,\nexit loop and return final string.
+end
+
+QRY --> REPL : Final Generator Yield
+REPL -> Developer : Renders complete task result
+deactivate REPL
+
+@enduml
