@@ -20,7 +20,7 @@ This directory contains detailed architectural research and flow analysis for th
 - **[Deep Dive](./code-editing-deep-dive.md):** Breakdown of `query.ts` and the `FileEditTool` safety logic.
 - **[Flow Diagram](./code-editing-flow.puml):** Multi-turn interaction between the LLM and local filesystem.
 
-![Code Editing Flow](./CodeEditingFlow_Detailed.png)
+![Code Editing Flow](./CodeEditingFlow_Expert.png)
 
 ---
 
