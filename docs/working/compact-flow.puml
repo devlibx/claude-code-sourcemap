@@ -1,0 +1,149 @@
+@startuml CompactCommandFlow_Detailed
+' Ultra-Detailed Sequence Diagram for Claude Code /compact Command
+' Maps exact function calls, data transformations, and React lifecycle events.
+
+skinparam handwritten false
+skinparam backgroundColor white
+skinparam BoxPadding 10
+skinparam ParticipantPadding 15
+skinparam maxMessageSize 150
+
+header Claude Code Internal Architecture: /compact Execution
+footer Confidential - Senior Architect Deep Dive
+
+actor Developer as "Developer"
+box "React UI Layer" #F8F9FA
+    participant REPL as "REPL.tsx\n(Main Controller)"
+    participant PI as "PromptInput.tsx\n(Input Component)"
+end box
+
+box "Message Processing" #E8F5E9
+    participant PUI as "messages.tsx\n(processUserInput)"
+    participant SLASH as "messages.tsx\n(getMessagesForSlashCommand)"
+end box
+
+box "Command & State" #E3F2FD
+    participant COMP as "compact.ts\n(Command Logic)"
+    participant MSGS as "messages.ts\n(Global Store)"
+    participant TERM as "terminal.ts\n(Terminal Utils)"
+    participant CTX as "context.ts\n(Cache Manager)"
+end box
+
+box "API Service" #FFF3E0
+    participant API as "claude.ts\n(querySonnet)"
+    participant ANTH as "Anthropic API\n(Remote)"
+end box
+
+' --- FLOW START ---
+Developer -> PI : Types "/compact" & hits Enter
+activate PI
+
+PI -> PI : onSubmit("/compact")
+PI -> PI : setIsLoading(true)
+PI -> PUI : processUserInput("/compact", "prompt", context)
+activate PUI
+
+PUI -> PUI : input.startsWith('/') -> true
+PUI -> PUI : extract commandName = "compact"
+PUI -> SLASH : getMessagesForSlashCommand("compact", args, context)
+activate SLASH
+
+SLASH -> COMP : command.call(_, context)
+note right of SLASH: Looks up 'compact' in COMMANDS registry
+activate COMP
+
+group 1. State Capture & Prompt Construction
+    COMP -> MSGS : getMessagesGetter()()
+    activate MSGS
+    MSGS --> COMP : messages (Array of full conversation history)
+    deactivate MSGS
+    
+    COMP -> COMP : summaryRequest = createUserMessage(\n"Provide a detailed but concise summary...")
+end
+
+group 2. Semantic Compression (LLM Call)
+    COMP -> PUI : normalizeMessagesForAPI([...messages, summaryRequest])
+    note right of COMP: Converts internal Message types to API standard
+    PUI --> COMP : normalized_array
+    
+    COMP -> API : querySonnet(normalized_array, systemPrompt, tools, options)
+    activate API
+    
+    API -> ANTH : POST /v1/messages
+    activate ANTH
+    note right of API: Sends the entire heavy context window\nto Claude 3.5 Sonnet
+    ANTH --> API : HTTP 200 OK (API Message Object)
+    deactivate ANTH
+    
+    API --> COMP : summaryResponse (AssistantMessage)
+    deactivate API
+end
+
+group 3. Data Validation & UI Hacks
+    COMP -> COMP : Extract 'summary' text from summaryResponse.message.content
+    COMP -> COMP : Check if !summary or startsWith(API_ERROR) -> throw Error
+    
+    note over COMP: **Token Mocking Hack:**\nReset tokens so UI TokenWarning component\nthinks context is empty.
+    COMP -> COMP : summaryResponse.message.usage.input_tokens = 0
+end
+
+group 4. System Destruction (The Wipe)
+    COMP -> TERM : clearTerminal()
+    activate TERM
+    TERM -> "process.stdout" : write('\x1b[2J\x1b[3J\x1b[H')
+    note right of TERM: Clears screen and scrollback buffer
+    TERM --> COMP : resolved
+    deactivate TERM
+    
+    COMP -> MSGS : getMessagesSetter()([])
+    activate MSGS
+    note right of MSGS: Wipes global message array to []
+    MSGS --> COMP
+    deactivate MSGS
+    
+    COMP -> CTX : getContext.cache.clear?.()
+    COMP -> CTX : getCodeStyle.cache.clear?.()
+    note right of CTX: Invalidates memoized directory structures\nand git status to force rescan
+end
+
+group 5. The Handoff (Queueing Next State)
+    COMP -> COMP : instruction = createUserMessage("Use the /compact command...")
+    COMP -> REPL : context.setForkConvoWithMessagesOnTheNextRender(\n  [instruction, summaryResponse]\n)
+    note right of COMP: We don't set messages directly.\nWe queue them for the REPL to pick up.
+end
+
+COMP --> SLASH : returns "" (Empty string)
+deactivate COMP
+
+SLASH --> PUI : returns [] (Empty array for local commands)
+deactivate SLASH
+
+PUI --> PI : returns []
+deactivate PUI
+
+PI -> PI : addToHistory("/compact")
+PI -> PI : resetHistory()
+PI -> PI : setIsLoading(false)
+deactivate PI
+
+group 6. React Lifecycle (Re-hydration)
+    note over REPL: State variable 'forkConvoWithMessagesOnTheNextRender'\nhas changed. React triggers useEffect.
+    activate REPL
+    
+    REPL -> REPL : useEffect()
+    REPL -> REPL : setForkNumber(_ => _ + 1)
+    note right of REPL: Increments session ID
+    
+    REPL -> REPL : setForkConvoWithMessagesOnTheNextRender(null)
+    note right of REPL: Clears the trigger queue
+    
+    REPL -> REPL : setMessages([instruction, summaryResponse])
+    note right of REPL: **Crucial Step:** The main UI state is\noverwritten with the summary.
+    
+    REPL -> Developer : Renders screen with the summary bubble.
+    deactivate REPL
+end
+
+note over Developer, REPL: When the Developer types their NEXT message, it is appended\nto `[instruction, summaryResponse]`. The LLM treats the summary\nas its own previous response.
+
+@enduml
