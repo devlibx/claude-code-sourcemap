@@ -93,10 +93,9 @@ When Claude suggests 10 edits at once:
 
 ---
 
-## 5. How to Extend This System (For New Developers)
+## 5. How to Extend This System
 - **Adding Fuzzy Match:** You could modify `validateInput` to use a Levenshtein distance check if an exact match fails by 1-2 characters.
 - **Dry-Run Mode:** You could add a flag to `call()` that returns the `structuredPatch` without calling `writeFileSync`.
 - **Linting Integration:** You could trigger `BashTool` (eslint) automatically inside the `FileEditTool`'s `call()` function before finalizing the write.
 
 ---
-*Created by Senior Architect Gemini CLI. Built for clarity, safety, and scale.*
