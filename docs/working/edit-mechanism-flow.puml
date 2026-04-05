@@ -1,0 +1,84 @@
+@startuml EditMechanismFlow_Expert
+' Expert-Level Sequence Diagram for Multi-File Batch Editing
+' Maps Parallel Reading vs Serial Writing & the JSON Tool-Use Handoff.
+
+skinparam handwritten true
+skinparam backgroundColor white
+skinparam BoxPadding 10
+skinparam ParticipantPadding 15
+skinparam maxMessageSize 250
+
+header Claude Code Internal Architecture: Batch Mutation & String Match
+footer Confidential - Senior Architect Series
+
+actor Developer as "Developer"
+box "Orchestration" #E8F5E9
+    participant QRY as "query.ts\n(The Dispatcher)"
+end box
+
+box "The Tools" #E3F2FD
+    participant READ as "FileReadTool.tsx\n(The Eyes)"
+    participant EDIT as "FileEditTool.tsx\n(The Hands)"
+end box
+
+box "External" #FFF3E0
+    participant ANTH as "Anthropic API\n(Claude 3.5 Sonnet)"
+    database DISK as "Local Filesystem"
+end box
+
+' --- START ---
+Developer -> QRY : "Update headers in app.ts and auth.ts"
+activate QRY
+
+group Phase 1: Parallel Context Gathering (Read-Only)
+    QRY -> ANTH : Turn 1 Request
+    ANTH --> QRY : tool_use: [Read('app.ts'), Read('auth.ts')]
+    
+    par
+        QRY -> READ : call('app.ts')
+        READ -> DISK : read('app.ts')
+        READ --> QRY : result: [File Content A]
+    else
+        QRY -> READ : call('auth.ts')
+        READ -> DISK : read('auth.ts')
+        READ --> QRY : result: [File Content B]
+    end
+    note right of QRY: **Concurrency:** Read-only tools\nrun in parallel (max 10).
+end
+
+group Phase 2: Inference & Batch Generation
+    QRY -> ANTH : Turn 2 Request (with file contents)
+    
+    note over ANTH: Claude analyzes both files.\nIt finds exactly what to swap.\nIt generates a BATCH response.
+    
+    ANTH --> QRY : AssistantMessage with multiple tool_use blocks
+    
+    note right of QRY: **JSON Payload Structure:**\n[\n  { "name": "FileEdit", "input": { \n      "path": "app.ts", \n      "old": "import { A } from './lib'", \n      "new": "import { A, B } from './lib'" \n  } },\n  { "name": "FileEdit", "input": { \n      "path": "auth.ts", \n      "old": "const X = 1", \n      "new": "const X = 2" \n  } }\n]
+end
+
+group Phase 3: Serial Enforcement (The Writing)
+    note right of QRY: **Safety:** Write-enabled tools\nmust run sequentially to prevent\nrace conditions or file locking.
+    
+    loop for each tool_use in batch
+        QRY -> EDIT : validateInput()
+        activate EDIT
+        EDIT -> DISK : Check uniqueness & mtimeMs
+        EDIT --> QRY : Success
+        deactivate EDIT
+        
+        QRY -> EDIT : call()
+        activate EDIT
+        EDIT -> DISK : Atomic String Replace & Save
+        EDIT --> QRY : Success
+        deactivate EDIT
+    end
+end
+
+group Phase 4: Verification Turn
+    QRY -> ANTH : Turn 3 Request (All results)
+    ANTH --> QRY : "I have updated the imports in both files."
+end
+
+deactivate QRY
+
+@enduml
