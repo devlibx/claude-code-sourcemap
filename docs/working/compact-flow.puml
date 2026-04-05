@@ -2,7 +2,7 @@
 ' Ultra-Detailed Sequence Diagram for Claude Code /compact Command
 ' Maps exact function calls, data transformations, and React lifecycle events.
 
-skinparam handwritten false
+skinparam handwritten true
 skinparam backgroundColor white
 skinparam BoxPadding 10
 skinparam ParticipantPadding 15
